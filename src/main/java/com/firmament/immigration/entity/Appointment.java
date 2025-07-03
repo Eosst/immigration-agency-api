@@ -1,0 +1,62 @@
+package com.firmament.immigration.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import java.time.LocalDateTime;
+import java.math.BigDecimal;
+
+@Entity
+@Table(name = "appointments")
+@Getter @Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Appointment extends BaseEntity {
+
+    // Client Information (no account needed!)
+    @Column(nullable = false)
+    private String firstName;
+
+    @Column(nullable = false)
+    private String lastName;
+
+    @Column(nullable = false)
+    private String email;
+
+    @Column(nullable = false)
+    private String phone;
+
+    @Column(nullable = false)
+    private String country;
+
+    // Appointment Details
+    @Column(nullable = false)
+    private LocalDateTime appointmentDate;
+
+    @Column(nullable = false)
+    private Integer duration; // in minutes (30, 60, 90)
+
+    @Column(nullable = false)
+    private String consultationType;
+
+    @Column(length = 1000)
+    private String clientPresentation; // Their 500-word description
+
+    // Payment Information
+    @Column(nullable = false)
+    private BigDecimal amount;
+
+    @Column(nullable = false)
+    private String currency; // CAD or MAD
+
+    @Column(unique = true)
+    private String paymentIntentId; // Stripe payment ID
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private AppointmentStatus status = AppointmentStatus.PENDING;
+
+    // For admin notes
+    @Column(length = 1000)
+    private String adminNotes;
+}
