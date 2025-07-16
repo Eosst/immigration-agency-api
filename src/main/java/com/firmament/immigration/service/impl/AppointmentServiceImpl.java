@@ -4,12 +4,12 @@ import com.firmament.immigration.dto.request.CreateAppointmentRequest;
 import com.firmament.immigration.dto.response.AppointmentResponse;
 import com.firmament.immigration.entity.Appointment;
 import com.firmament.immigration.entity.AppointmentStatus;
-import com.firmament.immigration.entity.TimeSlot;
 import com.firmament.immigration.exception.ResourceNotFoundException;
 import com.firmament.immigration.exception.BusinessException;
 import com.firmament.immigration.repository.AppointmentRepository;
-import com.firmament.immigration.repository.TimeSlotRepository;
+import com.firmament.immigration.repository.BlockedPeriodRepository;
 import com.firmament.immigration.service.AppointmentService;
+import com.firmament.immigration.service.AvailabilityService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
@@ -17,26 +17,25 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j  // Lombok annotation for logging
+@Slf4j
 @Transactional
 public class AppointmentServiceImpl implements AppointmentService {
 
     private final AppointmentRepository appointmentRepository;
-    private final TimeSlotRepository timeSlotRepository;
+    private final BlockedPeriodRepository blockedPeriodRepository;
+    private final AvailabilityService availabilityService;
     private final ModelMapper modelMapper;
 
-    // Price configuration (move to config later)
+    // Price configuration
     private static final BigDecimal PRICE_30_MIN_CAD = new BigDecimal("50");
     private static final BigDecimal PRICE_60_MIN_CAD = new BigDecimal("90");
     private static final BigDecimal PRICE_90_MIN_CAD = new BigDecimal("130");
-    private static final BigDecimal CAD_TO_MAD_RATE = new BigDecimal("10"); // Approximate
+    private static final BigDecimal CAD_TO_MAD_RATE = new BigDecimal("10");
 
     @Override
     public AppointmentResponse createAppointment(CreateAppointmentRequest request) {
@@ -47,28 +46,15 @@ public class AppointmentServiceImpl implements AppointmentService {
             throw new BusinessException("You already have a pending appointment. Please complete or cancel it first.");
         }
 
-        // 2. Check time slot availability
-        LocalDate date = request.getAppointmentDate().toLocalDate();
-        LocalTime time = request.getAppointmentDate().toLocalTime();
-
-        // First, ensure slots exist for this date
-        List<TimeSlot> availableSlots = timeSlotRepository.findByDateAndAvailableTrue(date);
-        if (availableSlots.isEmpty()) {
-            throw new BusinessException("No available time slots for selected date");
+        // 2. Check if the requested time is available
+        if (!availabilityService.isAvailable(request.getAppointmentDate(), request.getDuration())) {
+            throw new BusinessException("Selected time is not available. Please choose another time.");
         }
-
-        // Find the specific requested slot
-        TimeSlot timeSlot = availableSlots.stream()
-                .filter(slot -> slot.getStartTime().equals(time))
-                .findFirst()
-                .orElseThrow(() -> new BusinessException(
-                        String.format("Time slot at %s is not available on %s", time, date)
-                ));
 
         // 3. Calculate price
         BigDecimal amount = calculatePrice(request.getDuration(), request.getCurrency());
 
-        // 4. Create appointment
+        // 4. Create and save appointment
         Appointment appointment = Appointment.builder()
                 .firstName(request.getFirstName())
                 .lastName(request.getLastName())
@@ -86,10 +72,12 @@ public class AppointmentServiceImpl implements AppointmentService {
 
         appointment = appointmentRepository.save(appointment);
 
-        // 5. Mark time slot as unavailable
-        timeSlot.setAvailable(false);
-        timeSlot.setAppointment(appointment);
-        timeSlotRepository.save(timeSlot);
+        // 5. Block the time slot for this appointment
+        availabilityService.blockTimeForAppointment(
+                appointment.getId(),
+                request.getAppointmentDate(),
+                request.getDuration()
+        );
 
         log.info("Appointment created with ID: {}", appointment.getId());
 
@@ -147,19 +135,16 @@ public class AppointmentServiceImpl implements AppointmentService {
         appointment.setStatus(AppointmentStatus.CANCELLED);
         appointmentRepository.save(appointment);
 
-        // Free up the time slot
-        TimeSlot timeSlot = timeSlotRepository.findByDate(appointment.getAppointmentDate().toLocalDate())
-                .stream()
-                .filter(slot -> slot.getAppointment() != null &&
-                        slot.getAppointment().getId().equals(appointment.getId()))
+        // Free up the blocked time
+        // Find and delete the blocked period associated with this appointment
+        blockedPeriodRepository.findAll().stream()
+                .filter(bp -> bp.getAppointment() != null &&
+                        bp.getAppointment().getId().equals(appointment.getId()))
                 .findFirst()
-                .orElse(null);
-
-        if (timeSlot != null) {
-            timeSlot.setAvailable(true);
-            timeSlot.setAppointment(null);
-            timeSlotRepository.save(timeSlot);
-        }
+                .ifPresent(blockedPeriod -> {
+                    blockedPeriodRepository.delete(blockedPeriod);
+                    log.info("Freed up blocked time for cancelled appointment: {}", id);
+                });
 
         log.info("Appointment {} cancelled", id);
     }
@@ -191,4 +176,6 @@ public class AppointmentServiceImpl implements AppointmentService {
     private AppointmentResponse mapToResponse(Appointment appointment) {
         return modelMapper.map(appointment, AppointmentResponse.class);
     }
+
 }
+

@@ -6,12 +6,12 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 
 @Entity
-@Table(name = "time_slots")
+@Table(name = "blocked_periods")
 @Getter @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class TimeSlot extends BaseEntity {
+public class BlockedPeriod extends BaseEntity {
 
     @Column(nullable = false)
     private LocalDate date;
@@ -23,10 +23,12 @@ public class TimeSlot extends BaseEntity {
     private LocalTime endTime;
 
     @Column(nullable = false)
-    private Boolean available = true;
+    private String reason; // "APPOINTMENT", "VACATION", "MEETING", etc.
 
-    // Link to appointment when booked
-    @OneToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "appointment_id")
-    private Appointment appointment;
+    private Appointment appointment; // null if blocked by admin
+
+    @Column(length = 500)
+    private String notes; // Admin notes for manual blocks
 }
