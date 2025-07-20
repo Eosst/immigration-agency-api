@@ -6,7 +6,10 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 
 @Entity
-@Table(name = "blocked_periods")
+@Table(name = "blocked_periods", indexes = {
+        @Index(name = "idx_date", columnList = "date"),
+        @Index(name = "idx_date_time", columnList = "date,startTime,endTime")
+})
 @Getter @Setter
 @NoArgsConstructor
 @AllArgsConstructor

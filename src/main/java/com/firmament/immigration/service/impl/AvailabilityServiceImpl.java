@@ -43,26 +43,14 @@ public class AvailabilityServiceImpl implements AvailabilityService {
 
     @Override
     public boolean isAvailable(LocalDateTime startDateTime, int durationInMinutes) {
+        if (startDateTime.isBefore(LocalDateTime.now())) {
+            return false;
+        }
         LocalDate date = startDateTime.toLocalDate();
         LocalTime startTime = startDateTime.toLocalTime();
         LocalTime endTime = startTime.plusMinutes(durationInMinutes);
 
-        // Check if it's within working hours
-        if (startTime.isBefore(WORK_START) || endTime.isAfter(WORK_END)) {
-            return false;
-        }
-
-        // Check if it overlaps with lunch break
-        if ((startTime.isBefore(LUNCH_END) && endTime.isAfter(LUNCH_START))) {
-            return false;
-        }
-
-        // Check if it's a weekend
-        if (date.getDayOfWeek().getValue() > 5) {
-            return false;
-        }
-
-        // Check against blocked periods
+        // Only check against blocked periods - no automatic restrictions
         return !blockedPeriodRepository.isTimeBlocked(date, startTime, endTime);
     }
 
@@ -74,17 +62,11 @@ public class AvailabilityServiceImpl implements AvailabilityService {
         // Get all blocked periods for this day
         List<BlockedPeriod> blockedPeriods = blockedPeriodRepository.findByDate(date);
 
-        // Generate available time slots (every 30 minutes)
+        // Generate available time slots (every 30 minutes) - 24 hours
         List<TimeSlotDto> availableSlots = new ArrayList<>();
-        LocalTime currentTime = WORK_START;
+        LocalTime currentTime = LocalTime.MIDNIGHT;
 
-        while (currentTime.isBefore(WORK_END)) {
-            // Skip lunch break
-            if (currentTime.equals(LUNCH_START)) {
-                currentTime = LUNCH_END;
-                continue;
-            }
-
+        while (currentTime.isBefore(LocalTime.MAX)) {
             boolean isBlocked = false;
             for (BlockedPeriod blocked : blockedPeriods) {
                 if (currentTime.compareTo(blocked.getStartTime()) >= 0 &&
@@ -126,14 +108,9 @@ public class AvailabilityServiceImpl implements AvailabilityService {
         LocalDate lastDay = firstDay.plusMonths(1).minusDays(1);
 
         for (LocalDate date = firstDay; !date.isAfter(lastDay); date = date.plusDays(1)) {
-            // Weekend = not available
-            if (date.getDayOfWeek().getValue() > 5) {
-                dayAvailability.put(date.getDayOfMonth(), false);
-            } else {
-                // Check if full day is blocked
-                boolean fullyBlocked = blockedPeriodRepository.isFullDayBlocked(date);
-                dayAvailability.put(date.getDayOfMonth(), !fullyBlocked);
-            }
+            // Check if full day is blocked - no weekend restrictions
+            boolean fullyBlocked = blockedPeriodRepository.isFullDayBlocked(date);
+            dayAvailability.put(date.getDayOfMonth(), !fullyBlocked);
         }
 
         response.setDayAvailability(dayAvailability);
