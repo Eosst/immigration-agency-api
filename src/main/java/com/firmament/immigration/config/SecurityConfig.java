@@ -59,6 +59,9 @@ public class SecurityConfig {
                         //Payment
                         .requestMatchers("/api/payments/webhook").permitAll()
 
+                        //document upload
+                        .requestMatchers("/api/documents/upload/**").permitAll()
+
                         // Everything else
                         .anyRequest().authenticated()
                 )

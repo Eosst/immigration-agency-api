@@ -1,7 +1,8 @@
+// In AvailabilityServiceImpl.java
+
 package com.firmament.immigration.service.impl;
 
 import com.firmament.immigration.dto.request.BlockPeriodRequest;
-
 import com.firmament.immigration.dto.response.BlockedPeriodResponse;
 import com.firmament.immigration.dto.response.DayAvailabilityResponse;
 import com.firmament.immigration.dto.response.MonthAvailabilityResponse;
@@ -15,6 +16,7 @@ import com.firmament.immigration.repository.BlockedPeriodRepository;
 import com.firmament.immigration.service.AvailabilityService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,23 +25,16 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.*;
 import java.util.stream.Collectors;
-import org.modelmapper.ModelMapper;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
-@Transactional
+@Transactional(readOnly = true) // Set to read-only by default for safety
 public class AvailabilityServiceImpl implements AvailabilityService {
 
     private final BlockedPeriodRepository blockedPeriodRepository;
     private final AppointmentRepository appointmentRepository;
     private final ModelMapper modelMapper;
-
-    // Working hours
-    private static final LocalTime WORK_START = LocalTime.of(9, 0);
-    private static final LocalTime WORK_END = LocalTime.of(17, 0);
-    private static final LocalTime LUNCH_START = LocalTime.of(12, 0);
-    private static final LocalTime LUNCH_END = LocalTime.of(14, 0);
 
     @Override
     public boolean isAvailable(LocalDateTime startDateTime, int durationInMinutes) {
@@ -50,49 +45,72 @@ public class AvailabilityServiceImpl implements AvailabilityService {
         LocalTime startTime = startDateTime.toLocalTime();
         LocalTime endTime = startTime.plusMinutes(durationInMinutes);
 
-        // Only check against blocked periods - no automatic restrictions
+        // This check is fine for single-use cases but inefficient in a loop
         return !blockedPeriodRepository.isTimeBlocked(date, startTime, endTime);
     }
 
+    /**
+     * Corrected and Optimized Method.
+     */
     @Override
     public DayAvailabilityResponse getAvailableTimesForDay(LocalDate date) {
         DayAvailabilityResponse response = new DayAvailabilityResponse();
         response.setDate(date);
 
-        // Get all blocked periods for this day
+        // 1. Fetch all blocked periods for the day ONCE.
         List<BlockedPeriod> blockedPeriods = blockedPeriodRepository.findByDate(date);
 
-        // Generate available time slots (every 30 minutes) - 24 hours
         List<TimeSlotDto> availableSlots = new ArrayList<>();
         LocalTime currentTime = LocalTime.MIDNIGHT;
+        LocalTime dayEnd = LocalTime.of(23, 59); // Loop until the end of the day
 
-        while (currentTime.isBefore(LocalTime.MAX)) {
-            boolean isBlocked = false;
-            for (BlockedPeriod blocked : blockedPeriods) {
-                if (currentTime.compareTo(blocked.getStartTime()) >= 0 &&
-                        currentTime.compareTo(blocked.getEndTime()) < 0) {
-                    isBlocked = true;
-                    break;
-                }
+        // 2. Fix the infinite loop by ensuring it terminates correctly.
+        while (!currentTime.isAfter(dayEnd)) {
+            TimeSlotDto slot = new TimeSlotDto();
+            slot.setStartTime(currentTime);
+
+            // 3. Perform availability checks IN-MEMORY instead of hitting the DB.
+            slot.setAvailable30Min(isSlotFree(currentTime, 30, blockedPeriods));
+            slot.setAvailable60Min(isSlotFree(currentTime, 60, blockedPeriods));
+            slot.setAvailable90Min(isSlotFree(currentTime, 90, blockedPeriods));
+            availableSlots.add(slot);
+
+            // Break the loop if we're at the last possible slot (23:30) to avoid rollover
+            if (currentTime.equals(LocalTime.of(23, 30))) {
+                break;
             }
-
-            if (!isBlocked) {
-                TimeSlotDto slot = new TimeSlotDto();
-                slot.setStartTime(currentTime);
-                slot.setAvailable30Min(isAvailable(date.atTime(currentTime), 30));
-                slot.setAvailable60Min(isAvailable(date.atTime(currentTime), 60));
-                slot.setAvailable90Min(isAvailable(date.atTime(currentTime), 90));
-                availableSlots.add(slot);
-            }
-
             currentTime = currentTime.plusMinutes(30);
         }
 
         response.setAvailableSlots(availableSlots);
-        response.setFullyBooked(availableSlots.isEmpty());
+        // A day is fully booked if no slot has any availability
+        boolean isFullyBooked = availableSlots.stream()
+                .noneMatch(s -> s.isAvailable30Min() || s.isAvailable60Min() || s.isAvailable90Min());
+        response.setFullyBooked(isFullyBooked);
 
         return response;
     }
+
+    /**
+     * Helper method to check availability against a pre-fetched list of blocked periods.
+     * This avoids hitting the database in a loop.
+     */
+    private boolean isSlotFree(LocalTime startTime, int duration, List<BlockedPeriod> blockedPeriods) {
+        LocalTime endTime = startTime.plusMinutes(duration);
+        // Handle overnight rollover for durations that cross midnight
+        if (endTime.isBefore(startTime)) {
+            return false; // Cannot book slots that cross midnight
+        }
+
+        for (BlockedPeriod blocked : blockedPeriods) {
+            // Check for any overlap: (StartA < EndB) and (EndA > StartB)
+            if (startTime.isBefore(blocked.getEndTime()) && endTime.isAfter(blocked.getStartTime())) {
+                return false; // The slot is blocked
+            }
+        }
+        return true; // The slot is free
+    }
+
 
     @Override
     public MonthAvailabilityResponse getMonthAvailability(int year, int month) {
@@ -106,13 +124,10 @@ public class AvailabilityServiceImpl implements AvailabilityService {
         LocalDate today = LocalDate.now();
 
         for (LocalDate date = firstDay; !date.isAfter(lastDay); date = date.plusDays(1)) {
-            // Past dates are not available
             if (date.isBefore(today)) {
                 dayAvailability.put(date.getDayOfMonth(), false);
                 continue;
             }
-
-            // Check if full day is blocked using the new method
             boolean fullyBlocked = isFullDayBlocked(date);
             dayAvailability.put(date.getDayOfMonth(), !fullyBlocked);
         }
@@ -122,64 +137,43 @@ public class AvailabilityServiceImpl implements AvailabilityService {
 
     private boolean isFullDayBlocked(LocalDate date) {
         List<BlockedPeriod> blockedPeriods = blockedPeriodRepository.findByDate(date);
-
         if (blockedPeriods.isEmpty()) {
             return false;
         }
-
-        // Calculate total blocked minutes
-        long totalBlockedMinutes = 0;
-        for (BlockedPeriod period : blockedPeriods) {
-            LocalTime start = period.getStartTime();
-            LocalTime end = period.getEndTime();
-
-            // Calculate minutes between start and end
-            long minutes = java.time.Duration.between(start, end).toMinutes();
-            totalBlockedMinutes += minutes;
-        }
-
-        // If 8 hours (480 minutes) or more are blocked, consider the day fully blocked
-        return totalBlockedMinutes >= 480;
+        long totalBlockedMinutes = blockedPeriods.stream()
+                .mapToLong(period -> java.time.Duration.between(period.getStartTime(), period.getEndTime()).toMinutes())
+                .sum();
+        return totalBlockedMinutes >= 480; // 8 hours
     }
 
     @Override
+    @Transactional // Override to make this method writable
     public void blockPeriod(BlockPeriodRequest request) {
-        // Validate the period
         if (request.getStartTime().isAfter(request.getEndTime())) {
             throw new BusinessException("Start time must be before end time");
         }
-
-        BlockedPeriod blockedPeriod = BlockedPeriod.builder()
-                .date(request.getDate())
-                .startTime(request.getStartTime())
-                .endTime(request.getEndTime())
-                .reason(request.getReason())
-                .notes(request.getNotes())
-                .build();
-
+        BlockedPeriod blockedPeriod = modelMapper.map(request, BlockedPeriod.class);
         blockedPeriodRepository.save(blockedPeriod);
-        log.info("Blocked period created: {} from {} to {}",
-                request.getDate(), request.getStartTime(), request.getEndTime());
+        log.info("Blocked period created: {} from {} to {}", request.getDate(), request.getStartTime(), request.getEndTime());
     }
 
     @Override
+    @Transactional // Override to make this method writable
     public void unblockPeriod(String blockedPeriodId) {
         BlockedPeriod period = blockedPeriodRepository.findById(blockedPeriodId)
                 .orElseThrow(() -> new ResourceNotFoundException("Blocked period not found"));
-
         if (period.getAppointment() != null) {
             throw new BusinessException("Cannot unblock period associated with an appointment");
         }
-
         blockedPeriodRepository.delete(period);
         log.info("Unblocked period: {}", blockedPeriodId);
     }
 
     @Override
+    @Transactional // Override to make this method writable
     public void blockTimeForAppointment(String appointmentId, LocalDateTime startTime, int duration) {
         Appointment appointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
-
         BlockedPeriod blockedPeriod = BlockedPeriod.builder()
                 .date(startTime.toLocalDate())
                 .startTime(startTime.toLocalTime())
@@ -187,28 +181,22 @@ public class AvailabilityServiceImpl implements AvailabilityService {
                 .reason("APPOINTMENT")
                 .appointment(appointment)
                 .build();
-
         blockedPeriodRepository.save(blockedPeriod);
         log.info("Blocked time for appointment: {}", appointmentId);
     }
+
     @Override
     public List<BlockedPeriodResponse> getBlockedPeriods(LocalDate startDate, LocalDate endDate) {
         List<BlockedPeriod> blockedPeriods;
-
         if (startDate != null && endDate != null) {
-            // Get blocked periods within date range
             blockedPeriods = blockedPeriodRepository.findByDateBetween(startDate, endDate);
         } else if (startDate != null) {
-            // Get blocked periods from start date onwards
             blockedPeriods = blockedPeriodRepository.findByDateGreaterThanEqual(startDate);
         } else if (endDate != null) {
-            // Get blocked periods up to end date
             blockedPeriods = blockedPeriodRepository.findByDateLessThanEqual(endDate);
         } else {
-            // Get all blocked periods
             blockedPeriods = blockedPeriodRepository.findAll();
         }
-
         return blockedPeriods.stream()
                 .map(this::mapToBlockedPeriodResponse)
                 .collect(Collectors.toList());
@@ -216,14 +204,9 @@ public class AvailabilityServiceImpl implements AvailabilityService {
 
     private BlockedPeriodResponse mapToBlockedPeriodResponse(BlockedPeriod blockedPeriod) {
         BlockedPeriodResponse response = modelMapper.map(blockedPeriod, BlockedPeriodResponse.class);
-
-        // Add appointment ID if linked to an appointment
         if (blockedPeriod.getAppointment() != null) {
             response.setAppointmentId(blockedPeriod.getAppointment().getId());
         }
-
         return response;
     }
-
-
 }
