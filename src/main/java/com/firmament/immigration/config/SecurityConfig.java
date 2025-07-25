@@ -56,6 +56,9 @@ public class SecurityConfig {
                         // Actuator
                         .requestMatchers("/actuator/**").permitAll()
 
+                        //Payment
+                        .requestMatchers("/api/payments/webhook").permitAll()
+
                         // Everything else
                         .anyRequest().authenticated()
                 )

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>Payment Receipt</title>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background: #2196F3; color: white; padding: 20px; text-align: center; }
+    .receipt { background: #f9f9f9; padding: 30px; margin-top: 20px; border-radius: 5px; }
+    .amount { font-size: 24px; color: #2196F3; font-weight: bold; }
+    .details { background: white; padding: 20px; margin: 20px 0; border-radius: 5px; }
+    .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>Payment Receipt</h1>
+  </div>
+
+  <div class="receipt">
+    <p>Dear <span th:text="${firstName}"></span>,</p>
+
+    <p>Thank you for your payment. This email serves as your official receipt.</p>
+
+    <div class="details">
+      <h3>Payment Details:</h3>
+      <p><strong>Amount Paid:</strong> <span class="amount" th:text="${currency + ' ' + amount}"></span></p>
+      <p><strong>Payment ID:</strong> <span th:text="${paymentId}"></span></p>
+      <p><strong>Appointment Date:</strong> <span th:text="${appointmentDate}"></span></p>
+      <p><strong>Payment Date:</strong> <span th:text="${#dates.format(#dates.createNow(), 'MMM dd, yyyy')}"></span></p>
+    </div>
+
+    <p>A copy of this receipt has been saved to your appointment record.</p>
+  </div>
+
+  <div class="footer">
+    <p>© 2025 Firmament Immigration. All rights reserved.</p>
+    <p>For any questions about this payment, please contact us.</p>
+  </div>
+</div>
+</body>
+</html>

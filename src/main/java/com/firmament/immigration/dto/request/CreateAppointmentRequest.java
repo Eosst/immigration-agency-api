@@ -1,5 +1,6 @@
 package com.firmament.immigration.dto.request;
 
+
 import jakarta.validation.constraints.*;
 import lombok.Data;
 import java.time.LocalDateTime;
@@ -34,7 +35,7 @@ public class CreateAppointmentRequest {
     @NotBlank(message = "Consultation type is required")
     private String consultationType;
 
-    @Size(max = 500, message = "Presentation must not exceed 500 words")
+    @Size(max = 1000, message = "Client presentation must not exceed 1000 characters")
     private String clientPresentation;
 
     @NotBlank(message = "Currency is required")
