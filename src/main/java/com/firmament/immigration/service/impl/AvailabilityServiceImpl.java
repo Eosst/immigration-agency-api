@@ -100,21 +100,46 @@ public class AvailabilityServiceImpl implements AvailabilityService {
         response.setYear(year);
         response.setMonth(month);
 
-        // Get all dates with blocked periods
-        List<LocalDate> datesWithBlocks = blockedPeriodRepository.getDatesWithBlockedPeriods(year, month);
-
         Map<Integer, Boolean> dayAvailability = new HashMap<>();
         LocalDate firstDay = LocalDate.of(year, month, 1);
         LocalDate lastDay = firstDay.plusMonths(1).minusDays(1);
+        LocalDate today = LocalDate.now();
 
         for (LocalDate date = firstDay; !date.isAfter(lastDay); date = date.plusDays(1)) {
-            // Check if full day is blocked - no weekend restrictions
-            boolean fullyBlocked = blockedPeriodRepository.isFullDayBlocked(date);
+            // Past dates are not available
+            if (date.isBefore(today)) {
+                dayAvailability.put(date.getDayOfMonth(), false);
+                continue;
+            }
+
+            // Check if full day is blocked using the new method
+            boolean fullyBlocked = isFullDayBlocked(date);
             dayAvailability.put(date.getDayOfMonth(), !fullyBlocked);
         }
-
         response.setDayAvailability(dayAvailability);
         return response;
+    }
+
+    private boolean isFullDayBlocked(LocalDate date) {
+        List<BlockedPeriod> blockedPeriods = blockedPeriodRepository.findByDate(date);
+
+        if (blockedPeriods.isEmpty()) {
+            return false;
+        }
+
+        // Calculate total blocked minutes
+        long totalBlockedMinutes = 0;
+        for (BlockedPeriod period : blockedPeriods) {
+            LocalTime start = period.getStartTime();
+            LocalTime end = period.getEndTime();
+
+            // Calculate minutes between start and end
+            long minutes = java.time.Duration.between(start, end).toMinutes();
+            totalBlockedMinutes += minutes;
+        }
+
+        // If 8 hours (480 minutes) or more are blocked, consider the day fully blocked
+        return totalBlockedMinutes >= 480;
     }
 
     @Override
