@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
-
+import java.time.ZonedDateTime;
 @Entity
 @Table(name = "appointments", indexes = {
         @Index(name = "idx_appointment_date", columnList = "appointmentDate"),
@@ -35,7 +35,7 @@ public class Appointment extends BaseEntity {
 
     // Appointment Details
     @Column(nullable = false)
-    private LocalDateTime appointmentDate;
+    private ZonedDateTime appointmentDate;
 
     @Column(nullable = false)
     private Integer duration; // in minutes (30, 60, 90)

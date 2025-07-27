@@ -21,8 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZonedDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -37,8 +37,8 @@ public class AvailabilityServiceImpl implements AvailabilityService {
     private final ModelMapper modelMapper;
 
     @Override
-    public boolean isAvailable(LocalDateTime startDateTime, int durationInMinutes) {
-        if (startDateTime.isBefore(LocalDateTime.now())) {
+    public boolean isAvailable(ZonedDateTime startDateTime, int durationInMinutes) {
+        if (startDateTime.isBefore(ZonedDateTime.now())) {
             return false;
         }
         LocalDate date = startDateTime.toLocalDate();
@@ -171,7 +171,7 @@ public class AvailabilityServiceImpl implements AvailabilityService {
 
     @Override
     @Transactional // Override to make this method writable
-    public void blockTimeForAppointment(String appointmentId, LocalDateTime startTime, int duration) {
+    public void blockTimeForAppointment(String appointmentId, ZonedDateTime  startTime, int duration) {
         Appointment appointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
         BlockedPeriod blockedPeriod = BlockedPeriod.builder()

@@ -15,9 +15,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.firmament.immigration.config.PricingConfig;
+import java.math.BigDecimal;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -30,6 +33,7 @@ public class AppointmentServiceImpl implements AppointmentService {
     private final BlockedPeriodRepository blockedPeriodRepository;
     private final AvailabilityService availabilityService;
     private final ModelMapper modelMapper;
+    private final PricingConfig pricingConfig;
 
     // Price configuration
     private static final BigDecimal PRICE_30_MIN_CAD = new BigDecimal("50");
@@ -149,29 +153,22 @@ public class AppointmentServiceImpl implements AppointmentService {
         log.info("Appointment {} cancelled", id);
     }
 
-    private BigDecimal calculatePrice(Integer duration, String currency) {
-        BigDecimal priceInCAD;
-
-        switch (duration) {
-            case 30:
-                priceInCAD = PRICE_30_MIN_CAD;
-                break;
-            case 60:
-                priceInCAD = PRICE_60_MIN_CAD;
-                break;
-            case 90:
-                priceInCAD = PRICE_90_MIN_CAD;
-                break;
-            default:
-                throw new BusinessException("Invalid duration: " + duration);
+    private BigDecimal calculatePrice(int duration, String currency) {
+        Map<String, Integer> prices;
+        if ("CAD".equalsIgnoreCase(currency)) {
+            prices = pricingConfig.getCadDuration();
+        } else { // Default to MAD
+            prices = pricingConfig.getMadDuration();
         }
 
-        if ("MAD".equals(currency)) {
-            return priceInCAD.multiply(CAD_TO_MAD_RATE);
-        }
+        BigDecimal price = BigDecimal.valueOf(prices.getOrDefault(String.valueOf(duration), 0));
 
-        return priceInCAD;
+        if (price.equals(BigDecimal.ZERO)) {
+            throw new BusinessException("No price configured for duration: " + duration + " and currency: " + currency);
+        }
+        return price;
     }
+
 
     private AppointmentResponse mapToResponse(Appointment appointment) {
         return modelMapper.map(appointment, AppointmentResponse.class);

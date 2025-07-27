@@ -4,6 +4,7 @@ package com.firmament.immigration.dto.request;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
 
 @Data
 public class CreateAppointmentRequest {
@@ -26,7 +27,7 @@ public class CreateAppointmentRequest {
 
     @NotNull(message = "Appointment date is required")
     @Future(message = "Appointment date must be in future")
-    private LocalDateTime appointmentDate;
+    private ZonedDateTime appointmentDate;
 
     @NotNull(message = "Duration is required")
     @Min(30) @Max(90)
