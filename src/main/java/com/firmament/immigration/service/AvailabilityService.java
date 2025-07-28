@@ -33,4 +33,6 @@ public interface AvailabilityService {
     // Get blocked periods in a date range
     List<BlockedPeriodResponse> getBlockedPeriods(LocalDate startDate, LocalDate endDate);
 
+    void freeUpBlockedTimeForAppointment(String appointmentId);
+
 }

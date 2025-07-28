@@ -138,17 +138,9 @@ public class AppointmentServiceImpl implements AppointmentService {
 
         appointment.setStatus(AppointmentStatus.CANCELLED);
         appointmentRepository.save(appointment);
+        availabilityService.freeUpBlockedTimeForAppointment(id);
 
-        // Free up the blocked time
-        // Find and delete the blocked period associated with this appointment
-        blockedPeriodRepository.findAll().stream()
-                .filter(bp -> bp.getAppointment() != null &&
-                        bp.getAppointment().getId().equals(appointment.getId()))
-                .findFirst()
-                .ifPresent(blockedPeriod -> {
-                    blockedPeriodRepository.delete(blockedPeriod);
-                    log.info("Freed up blocked time for cancelled appointment: {}", id);
-                });
+
 
         log.info("Appointment {} cancelled", id);
     }
@@ -159,6 +151,9 @@ public class AppointmentServiceImpl implements AppointmentService {
             prices = pricingConfig.getCadDuration();
         } else { // Default to MAD
             prices = pricingConfig.getMadDuration();
+        }
+        if (prices == null) {
+            throw new BusinessException("Pricing not configured for currency: " + currency);
         }
 
         BigDecimal price = BigDecimal.valueOf(prices.getOrDefault(String.valueOf(duration), 0));

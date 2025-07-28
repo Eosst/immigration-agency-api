@@ -209,4 +209,18 @@ public class AvailabilityServiceImpl implements AvailabilityService {
         }
         return response;
     }
+
+    @Override
+    @Transactional // Make this method writable
+    public void freeUpBlockedTimeForAppointment(String appointmentId) {
+        // This is the logic moved from AppointmentServiceImpl
+        blockedPeriodRepository.findAll().stream()
+                .filter(bp -> bp.getAppointment() != null &&
+                        bp.getAppointment().getId().equals(appointmentId))
+                .findFirst()
+                .ifPresent(blockedPeriod -> {
+                    blockedPeriodRepository.delete(blockedPeriod);
+                    log.info("Freed up blocked time for cancelled appointment: {}", appointmentId);
+                });
+    }
 }
