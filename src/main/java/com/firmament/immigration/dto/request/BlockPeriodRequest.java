@@ -14,11 +14,16 @@ public class BlockPeriodRequest {
     @JsonFormat(pattern = "yyyy-MM-dd")
     private LocalDate date;
 
-    @NotNull(message = "Start time is required")
+    // For date range blocking
+    @JsonFormat(pattern = "yyyy-MM-dd")
+    private LocalDate endDate; // Optional - if provided, blocks from date to endDate
+
+    // For full day blocking
+    private boolean fullDay = false;
+
     @JsonFormat(pattern = "HH:mm:ss")
     private LocalTime startTime;
 
-    @NotNull(message = "End time is required")
     @JsonFormat(pattern = "HH:mm:ss")
     private LocalTime endTime;
 
@@ -26,4 +31,16 @@ public class BlockPeriodRequest {
     private String reason; // VACATION, MEETING, PERSONAL, etc.
 
     private String notes;
+
+    // Custom validation
+    @AssertTrue(message = "Either fullDay must be true OR both startTime and endTime must be provided")
+    private boolean isValidTimeConfiguration() {
+        return fullDay || (startTime != null && endTime != null);
+    }
+
+    @AssertTrue(message = "End date must be after or equal to start date")
+    private boolean isValidDateRange() {
+        if (endDate == null) return true; // Single day is always valid
+        return !endDate.isBefore(date);
+    }
 }

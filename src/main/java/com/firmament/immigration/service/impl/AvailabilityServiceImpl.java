@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-@Transactional(readOnly = true) // Set to read-only by default for safety
+@Transactional(readOnly = true)
 public class AvailabilityServiceImpl implements AvailabilityService {
 
     private final BlockedPeriodRepository blockedPeriodRepository;
@@ -45,44 +45,49 @@ public class AvailabilityServiceImpl implements AvailabilityService {
         LocalTime startTime = startDateTime.toLocalTime();
         LocalTime endTime = startTime.plusMinutes(durationInMinutes);
 
-        // This check is fine for single-use cases but inefficient in a loop
+        // Check if it's blocked
         return !blockedPeriodRepository.isTimeBlocked(date, startTime, endTime);
     }
 
-    /**
-     * Corrected and Optimized Method.
-     */
     @Override
     public DayAvailabilityResponse getAvailableTimesForDay(LocalDate date) {
         DayAvailabilityResponse response = new DayAvailabilityResponse();
         response.setDate(date);
 
-        // 1. Fetch all blocked periods for the day ONCE.
+        // Fetch all blocked periods for the day ONCE
         List<BlockedPeriod> blockedPeriods = blockedPeriodRepository.findByDate(date);
 
-        List<TimeSlotDto> availableSlots = new ArrayList<>();
-        LocalTime currentTime = LocalTime.MIDNIGHT;
-        LocalTime dayEnd = LocalTime.of(23, 59); // Loop until the end of the day
+        // Log blocked periods for debugging
+        log.debug("Blocked periods for {}: {}", date,
+                blockedPeriods.stream()
+                        .map(bp -> bp.getStartTime() + "-" + bp.getEndTime())
+                        .collect(Collectors.joining(", ")));
 
-        // 2. Fix the infinite loop by ensuring it terminates correctly.
-        while (!currentTime.isAfter(dayEnd)) {
+        List<TimeSlotDto> availableSlots = new ArrayList<>();
+
+        // Generate time slots for the entire day (00:00 to 23:30 in 30-minute increments)
+        LocalTime currentTime = LocalTime.of(0, 0);
+
+        // Use a counter to prevent infinite loops
+        int slotCount = 0;
+        final int MAX_SLOTS = 48; // 24 hours * 2 slots per hour
+
+        while (slotCount < MAX_SLOTS) {
             TimeSlotDto slot = new TimeSlotDto();
             slot.setStartTime(currentTime);
 
-            // 3. Perform availability checks IN-MEMORY instead of hitting the DB.
+            // Check availability for each duration
             slot.setAvailable30Min(isSlotFree(currentTime, 30, blockedPeriods));
             slot.setAvailable60Min(isSlotFree(currentTime, 60, blockedPeriods));
             slot.setAvailable90Min(isSlotFree(currentTime, 90, blockedPeriods));
-            availableSlots.add(slot);
 
-            // Break the loop if we're at the last possible slot (23:30) to avoid rollover
-            if (currentTime.equals(LocalTime.of(23, 30))) {
-                break;
-            }
+            availableSlots.add(slot);
             currentTime = currentTime.plusMinutes(30);
+            slotCount++;
         }
 
         response.setAvailableSlots(availableSlots);
+
         // A day is fully booked if no slot has any availability
         boolean isFullyBooked = availableSlots.stream()
                 .noneMatch(s -> s.isAvailable30Min() || s.isAvailable60Min() || s.isAvailable90Min());
@@ -91,26 +96,25 @@ public class AvailabilityServiceImpl implements AvailabilityService {
         return response;
     }
 
-    /**
-     * Helper method to check availability against a pre-fetched list of blocked periods.
-     * This avoids hitting the database in a loop.
-     */
     private boolean isSlotFree(LocalTime startTime, int duration, List<BlockedPeriod> blockedPeriods) {
         LocalTime endTime = startTime.plusMinutes(duration);
-        // Handle overnight rollover for durations that cross midnight
+
+        // Handle the case where duration extends past midnight
         if (endTime.isBefore(startTime)) {
-            return false; // Cannot book slots that cross midnight
+            // For simplicity, don't allow bookings that cross midnight
+            return false;
         }
 
         for (BlockedPeriod blocked : blockedPeriods) {
             // Check for any overlap: (StartA < EndB) and (EndA > StartB)
             if (startTime.isBefore(blocked.getEndTime()) && endTime.isAfter(blocked.getStartTime())) {
-                return false; // The slot is blocked
+                log.debug("Slot {}+{} overlaps with blocked period {}-{}",
+                        startTime, duration, blocked.getStartTime(), blocked.getEndTime());
+                return false;
             }
         }
-        return true; // The slot is free
+        return true;
     }
-
 
     @Override
     public MonthAvailabilityResponse getMonthAvailability(int year, int month) {
@@ -123,42 +127,130 @@ public class AvailabilityServiceImpl implements AvailabilityService {
         LocalDate lastDay = firstDay.plusMonths(1).minusDays(1);
         LocalDate today = LocalDate.now();
 
+        // Get all blocked periods for the month in one query
+        List<BlockedPeriod> monthBlockedPeriods = blockedPeriodRepository.findByDateBetween(firstDay, lastDay);
+
+        // Group blocked periods by date
+        Map<LocalDate, List<BlockedPeriod>> blockedByDate = monthBlockedPeriods.stream()
+                .collect(Collectors.groupingBy(BlockedPeriod::getDate));
+
         for (LocalDate date = firstDay; !date.isAfter(lastDay); date = date.plusDays(1)) {
             if (date.isBefore(today)) {
                 dayAvailability.put(date.getDayOfMonth(), false);
                 continue;
             }
-            boolean fullyBlocked = isFullDayBlocked(date);
-            dayAvailability.put(date.getDayOfMonth(), !fullyBlocked);
+
+            // Check if this day has any availability using a more efficient method
+            boolean hasAvailability = hasAnyAvailabilityOptimized(date, blockedByDate.getOrDefault(date, List.of()));
+            dayAvailability.put(date.getDayOfMonth(), hasAvailability);
         }
         response.setDayAvailability(dayAvailability);
         return response;
     }
 
-    private boolean isFullDayBlocked(LocalDate date) {
-        List<BlockedPeriod> blockedPeriods = blockedPeriodRepository.findByDate(date);
-        if (blockedPeriods.isEmpty()) {
-            return false;
+    private boolean hasAnyAvailabilityOptimized(LocalDate date, List<BlockedPeriod> dayBlockedPeriods) {
+        // If there are no blocked periods, the day is available
+        if (dayBlockedPeriods.isEmpty()) {
+            return true;
         }
-        long totalBlockedMinutes = blockedPeriods.stream()
-                .mapToLong(period -> java.time.Duration.between(period.getStartTime(), period.getEndTime()).toMinutes())
-                .sum();
-        return totalBlockedMinutes >= 480; // 8 hours
+
+        // Calculate total blocked minutes
+        long totalBlockedMinutes = 0;
+
+        // Sort blocked periods by start time
+        List<BlockedPeriod> sortedPeriods = dayBlockedPeriods.stream()
+                .sorted((a, b) -> a.getStartTime().compareTo(b.getStartTime()))
+                .collect(Collectors.toList());
+
+        // Merge overlapping periods and calculate total blocked time
+        LocalTime mergedStart = null;
+        LocalTime mergedEnd = null;
+
+        for (BlockedPeriod period : sortedPeriods) {
+            if (mergedStart == null) {
+                mergedStart = period.getStartTime();
+                mergedEnd = period.getEndTime();
+            } else if (period.getStartTime().isBefore(mergedEnd) || period.getStartTime().equals(mergedEnd)) {
+                // Overlapping or adjacent periods - merge them
+                if (period.getEndTime().isAfter(mergedEnd)) {
+                    mergedEnd = period.getEndTime();
+                }
+            } else {
+                // Non-overlapping period - add the previous merged period to total
+                totalBlockedMinutes += java.time.Duration.between(mergedStart, mergedEnd).toMinutes();
+                mergedStart = period.getStartTime();
+                mergedEnd = period.getEndTime();
+            }
+        }
+
+        // Add the last merged period
+        if (mergedStart != null) {
+            totalBlockedMinutes += java.time.Duration.between(mergedStart, mergedEnd).toMinutes();
+        }
+
+        // If the entire day is blocked (23.5 hours or more), no availability
+        // We use 23.5 hours because we have 48 30-minute slots
+        return totalBlockedMinutes < (23.5 * 60);
     }
 
     @Override
-    @Transactional // Override to make this method writable
+    @Transactional
     public void blockPeriod(BlockPeriodRequest request) {
-        if (request.getStartTime().isAfter(request.getEndTime())) {
-            throw new BusinessException("Start time must be before end time");
+        // Handle single day blocking
+        if (request.getDate() != null && request.getEndDate() == null) {
+            if (request.isFullDay()) {
+                // Block entire day
+                BlockedPeriod blockedPeriod = BlockedPeriod.builder()
+                        .date(request.getDate())
+                        .startTime(LocalTime.of(0, 0))
+                        .endTime(LocalTime.of(23, 59))
+                        .reason(request.getReason())
+                        .notes(request.getNotes())
+                        .build();
+                blockedPeriodRepository.save(blockedPeriod);
+                log.info("Blocked entire day: {}", request.getDate());
+            } else {
+                // Block specific time period
+                if (request.getStartTime() != null && request.getEndTime() != null &&
+                        request.getStartTime().isAfter(request.getEndTime())) {
+                    throw new BusinessException("Start time must be before end time");
+                }
+                BlockedPeriod blockedPeriod = BlockedPeriod.builder()
+                        .date(request.getDate())
+                        .startTime(request.getStartTime())
+                        .endTime(request.getEndTime())
+                        .reason(request.getReason())
+                        .notes(request.getNotes())
+                        .build();
+                blockedPeriodRepository.save(blockedPeriod);
+                log.info("Blocked period created: {} from {} to {}",
+                        request.getDate(), request.getStartTime(), request.getEndTime());
+            }
         }
-        BlockedPeriod blockedPeriod = modelMapper.map(request, BlockedPeriod.class);
-        blockedPeriodRepository.save(blockedPeriod);
-        log.info("Blocked period created: {} from {} to {}", request.getDate(), request.getStartTime(), request.getEndTime());
+        // Handle date range blocking
+        else if (request.getDate() != null && request.getEndDate() != null) {
+            if (request.getEndDate().isBefore(request.getDate())) {
+                throw new BusinessException("End date must be after start date");
+            }
+
+            LocalDate currentDate = request.getDate();
+            while (!currentDate.isAfter(request.getEndDate())) {
+                BlockedPeriod blockedPeriod = BlockedPeriod.builder()
+                        .date(currentDate)
+                        .startTime(request.isFullDay() ? LocalTime.of(0, 0) : request.getStartTime())
+                        .endTime(request.isFullDay() ? LocalTime.of(23, 59) : request.getEndTime())
+                        .reason(request.getReason())
+                        .notes(request.getNotes())
+                        .build();
+                blockedPeriodRepository.save(blockedPeriod);
+                currentDate = currentDate.plusDays(1);
+            }
+            log.info("Blocked period from {} to {}", request.getDate(), request.getEndDate());
+        }
     }
 
     @Override
-    @Transactional // Override to make this method writable
+    @Transactional
     public void unblockPeriod(String blockedPeriodId) {
         BlockedPeriod period = blockedPeriodRepository.findById(blockedPeriodId)
                 .orElseThrow(() -> new ResourceNotFoundException("Blocked period not found"));
@@ -170,19 +262,25 @@ public class AvailabilityServiceImpl implements AvailabilityService {
     }
 
     @Override
-    @Transactional // Override to make this method writable
-    public void blockTimeForAppointment(String appointmentId, ZonedDateTime  startTime, int duration) {
+    @Transactional
+    public void blockTimeForAppointment(String appointmentId, ZonedDateTime startTime, int duration) {
         Appointment appointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
+
+        LocalTime localStartTime = startTime.toLocalTime();
+        LocalTime localEndTime = localStartTime.plusMinutes(duration);
+
         BlockedPeriod blockedPeriod = BlockedPeriod.builder()
                 .date(startTime.toLocalDate())
-                .startTime(startTime.toLocalTime())
-                .endTime(startTime.toLocalTime().plusMinutes(duration))
+                .startTime(localStartTime)
+                .endTime(localEndTime)
                 .reason("APPOINTMENT")
                 .appointment(appointment)
                 .build();
+
         blockedPeriodRepository.save(blockedPeriod);
-        log.info("Blocked time for appointment: {}", appointmentId);
+        log.info("Blocked time for appointment {}: {} to {} on {}",
+                appointmentId, localStartTime, localEndTime, startTime.toLocalDate());
     }
 
     @Override
@@ -211,9 +309,8 @@ public class AvailabilityServiceImpl implements AvailabilityService {
     }
 
     @Override
-    @Transactional // Make this method writable
+    @Transactional
     public void freeUpBlockedTimeForAppointment(String appointmentId) {
-        // This is the logic moved from AppointmentServiceImpl
         blockedPeriodRepository.findAll().stream()
                 .filter(bp -> bp.getAppointment() != null &&
                         bp.getAppointment().getId().equals(appointmentId))
