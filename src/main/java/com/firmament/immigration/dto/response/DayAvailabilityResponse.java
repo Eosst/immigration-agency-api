@@ -1,4 +1,3 @@
-// DayAvailabilityResponse.java
 package com.firmament.immigration.dto.response;
 
 import lombok.Data;
@@ -10,5 +9,5 @@ public class DayAvailabilityResponse {
     private LocalDate date;
     private boolean fullyBooked;
     private List<TimeSlotDto> availableSlots;
+    private String timezone; // ADD THIS FIELD
 }
-

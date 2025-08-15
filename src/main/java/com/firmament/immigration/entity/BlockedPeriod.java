@@ -4,11 +4,13 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZonedDateTime;
+import java.time.ZoneOffset;
 
 @Entity
 @Table(name = "blocked_periods", indexes = {
         @Index(name = "idx_date", columnList = "date"),
-        @Index(name = "idx_date_time", columnList = "date,startTime,endTime")
+        @Index(name = "idx_datetime", columnList = "startDateTime,endDateTime")
 })
 @Getter @Setter
 @NoArgsConstructor
@@ -17,21 +19,42 @@ import java.time.LocalTime;
 public class BlockedPeriod extends BaseEntity {
 
     @Column(nullable = false)
-    private LocalDate date;
-
+    private LocalDate date; // Keep for indexing/querying
+    
+    // NEW: Store as UTC timestamps
     @Column(nullable = false)
+    private ZonedDateTime startDateTime;
+    
+    @Column(nullable = false)
+    private ZonedDateTime endDateTime;
+    
+    // Store the original timezone for reference
+    @Column
+    private String originalTimezone;
+    
+    // Deprecated - will be computed from startDateTime/endDateTime
+    @Transient
     private LocalTime startTime;
-
-    @Column(nullable = false)
+    
+    @Transient
     private LocalTime endTime;
 
     @Column(nullable = false)
-    private String reason; // "APPOINTMENT", "VACATION", "MEETING", etc.
+    private String reason;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "appointment_id")
-    private Appointment appointment; // null if blocked by admin
+    private Appointment appointment;
 
     @Column(length = 500)
-    private String notes; // Admin notes for manual blocks
+    private String notes;
+    
+    // Helper methods
+    public LocalTime getStartTimeInZone(String timezone) {
+        return startDateTime.withZoneSameInstant(java.time.ZoneId.of(timezone)).toLocalTime();
+    }
+    
+    public LocalTime getEndTimeInZone(String timezone) {
+        return endDateTime.withZoneSameInstant(java.time.ZoneId.of(timezone)).toLocalTime();
+    }
 }

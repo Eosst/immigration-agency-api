@@ -7,5 +7,6 @@ import java.util.Map;
 public class MonthAvailabilityResponse {
     private int year;
     private int month;
-    private Map<Integer, Boolean> dayAvailability; // day -> isAvailable
+    private Map<Integer, Boolean> dayAvailability;
+    private String timezone; // ADD THIS FIELD
 }

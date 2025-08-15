@@ -28,21 +28,23 @@ public class AvailabilityController {
     @GetMapping("/day/{date}")
     @Operation(summary = "Get available time slots for a specific day")
     public ResponseEntity<DayAvailabilityResponse> getDayAvailability(
-            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        return ResponseEntity.ok(availabilityService.getAvailableTimesForDay(date));
+            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false, defaultValue = "UTC") String timezone) {
+        return ResponseEntity.ok(availabilityService.getAvailableTimesForDay(date, timezone));
     }
 
     @GetMapping("/month/{year}/{month}")
     @Operation(summary = "Get month overview showing which days have availability")
     public ResponseEntity<MonthAvailabilityResponse> getMonthAvailability(
             @PathVariable int year,
-            @PathVariable int month) {
-        return ResponseEntity.ok(availabilityService.getMonthAvailability(year, month));
+            @PathVariable int month,
+            @RequestParam(required = false, defaultValue = "UTC") String timezone) {
+        return ResponseEntity.ok(availabilityService.getMonthAvailability(year, month, timezone));
     }
 
     @PostMapping("/block")
     @Operation(summary = "Block a time period (Admin only)")
-    public ResponseEntity<Void> blockPeriod(@Valid @RequestBody BlockPeriodRequest request) {  // <-- Make sure @RequestBody is here
+    public ResponseEntity<Void> blockPeriod(@Valid @RequestBody BlockPeriodRequest request) {
         availabilityService.blockPeriod(request);
         return ResponseEntity.ok().build();
     }

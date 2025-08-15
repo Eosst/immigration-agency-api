@@ -1,4 +1,3 @@
-// BlockPeriodRequest.java
 package com.firmament.immigration.dto.request;
 
 import jakarta.validation.constraints.*;
@@ -31,6 +30,9 @@ public class BlockPeriodRequest {
     private String reason; // VACATION, MEETING, PERSONAL, etc.
 
     private String notes;
+    
+    // NEW: Add timezone field
+    private String timezone = "UTC"; // Default to UTC if not provided
 
     // Custom validation
     @AssertTrue(message = "Either fullDay must be true OR both startTime and endTime must be provided")

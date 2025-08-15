@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZonedDateTime;
 import java.util.List;
 
 @Repository
@@ -19,6 +20,14 @@ public interface BlockedPeriodRepository extends JpaRepository<BlockedPeriod, St
 
     // Find blocked periods for a date range
     List<BlockedPeriod> findByDateBetween(LocalDate startDate, LocalDate endDate);
+
+        @Query("SELECT b FROM BlockedPeriod b WHERE " +
+           "b.startDateTime < ?2 AND b.endDateTime > ?1")
+    List<BlockedPeriod> findByDateTimeBetween(ZonedDateTime startUtc, ZonedDateTime endUtc);
+
+        @Query("SELECT COUNT(b) > 0 FROM BlockedPeriod b WHERE " +
+           "b.startDateTime < ?2 AND b.endDateTime > ?1")
+    boolean isTimeBlockedUTC(ZonedDateTime startUtc, ZonedDateTime endUtc);
 
     // Check if a specific time is blocked
     // Fixed query - using proper overlap detection
