@@ -37,81 +37,77 @@ public class AvailabilityServiceImpl implements AvailabilityService {
         if (startDateTime.isBefore(ZonedDateTime.now())) {
             return false;
         }
-        
-        // Convert to UTC for storage comparison
+
         ZonedDateTime utcStart = startDateTime.withZoneSameInstant(ZoneOffset.UTC);
         ZonedDateTime utcEnd = utcStart.plusMinutes(durationInMinutes);
-        
-        LocalDate date = utcStart.toLocalDate();
-        LocalTime startTime = utcStart.toLocalTime();
-        LocalTime endTime = utcEnd.toLocalTime();
-        
-        // For now, use the existing method until we update the database schema
-        return !blockedPeriodRepository.isTimeBlocked(date, startTime, endTime);
+
+        return !blockedPeriodRepository.isTimeBlockedUTC(utcStart, utcEnd);
     }
 
     @Override
     public DayAvailabilityResponse getAvailableTimesForDay(LocalDate date) {
-        // Default implementation without timezone (for backward compatibility)
         return getAvailableTimesForDay(date, "UTC");
     }
-    
+
+    @Override
     public DayAvailabilityResponse getAvailableTimesForDay(LocalDate date, String timezone) {
         DayAvailabilityResponse response = new DayAvailabilityResponse();
         response.setDate(date);
-        response.setTimezone(timezone); // Set the timezone in response
-        
+        response.setTimezone(timezone);
+
         ZoneId zoneId = ZoneId.of(timezone);
-        
-        // Fetch all blocked periods for the day
-        List<BlockedPeriod> blockedPeriods = blockedPeriodRepository.findByDate(date);
-        
-        log.debug("Blocked periods for {} in timezone {}: {}", date, timezone,
-                blockedPeriods.stream()
-                        .map(bp -> bp.getStartTime() + "-" + bp.getEndTime())
-                        .collect(Collectors.joining(", ")));
-        
+
+        // Define the start and end of the day in the user's timezone, then convert to UTC to fetch relevant records
+        ZonedDateTime dayStart = date.atStartOfDay(zoneId);
+        ZonedDateTime dayEnd = dayStart.plusDays(1);
+
+        List<BlockedPeriod> blockedPeriodsUtc = blockedPeriodRepository.findByDateTimeBetween(dayStart.withZoneSameInstant(ZoneOffset.UTC), dayEnd.withZoneSameInstant(ZoneOffset.UTC));
+
+        // Convert fetched UTC periods to local time ranges for comparison
+        List<LocalTime[]> blockedLocalRanges = blockedPeriodsUtc.stream()
+                .map(bp -> new LocalTime[]{
+                        bp.getStartDateTime().withZoneSameInstant(zoneId).toLocalTime(),
+                        bp.getEndDateTime().withZoneSameInstant(zoneId).toLocalTime()
+                })
+                .collect(Collectors.toList());
+
         List<TimeSlotDto> availableSlots = new ArrayList<>();
-        
-        // Generate time slots for the entire day
+
+        // Generate potential time slots for the day
         LocalTime currentTime = LocalTime.of(0, 0);
-        int slotCount = 0;
-        final int MAX_SLOTS = 48;
-        
-        while (slotCount < MAX_SLOTS) {
+        while (currentTime.isBefore(LocalTime.of(23, 30))) {
             TimeSlotDto slot = new TimeSlotDto();
             slot.setStartTime(currentTime);
-            
-            // For now, use the existing logic
-            slot.setAvailable30Min(isSlotFree(currentTime, 30, blockedPeriods));
-            slot.setAvailable60Min(isSlotFree(currentTime, 60, blockedPeriods));
-            slot.setAvailable90Min(isSlotFree(currentTime, 90, blockedPeriods));
-            
+
+            slot.setAvailable30Min(isSlotFree(currentTime, 30, blockedLocalRanges));
+            slot.setAvailable60Min(isSlotFree(currentTime, 60, blockedLocalRanges));
+            slot.setAvailable90Min(isSlotFree(currentTime, 90, blockedLocalRanges));
+
             availableSlots.add(slot);
             currentTime = currentTime.plusMinutes(30);
-            slotCount++;
         }
-        
+
         response.setAvailableSlots(availableSlots);
-        
+
         boolean isFullyBooked = availableSlots.stream()
                 .noneMatch(s -> s.isAvailable30Min() || s.isAvailable60Min() || s.isAvailable90Min());
         response.setFullyBooked(isFullyBooked);
-        
+
         return response;
     }
 
-    private boolean isSlotFree(LocalTime startTime, int duration, List<BlockedPeriod> blockedPeriods) {
+    private boolean isSlotFree(LocalTime startTime, int duration, List<LocalTime[]> blockedRanges) {
         LocalTime endTime = startTime.plusMinutes(duration);
-        
-        if (endTime.isBefore(startTime)) {
-            return false; // Don't allow bookings that cross midnight
+
+        if (endTime.isBefore(startTime)) { // Handles overnight slots if necessary
+            return false;
         }
-        
-        for (BlockedPeriod blocked : blockedPeriods) {
-            if (startTime.isBefore(blocked.getEndTime()) && endTime.isAfter(blocked.getStartTime())) {
-                log.debug("Slot {}+{} overlaps with blocked period {}-{}",
-                        startTime, duration, blocked.getStartTime(), blocked.getEndTime());
+
+        for (LocalTime[] blocked : blockedRanges) {
+            LocalTime blockedStart = blocked[0];
+            LocalTime blockedEnd = blocked[1];
+            // Check for overlap: (StartA < EndB) and (EndA > StartB)
+            if (startTime.isBefore(blockedEnd) && endTime.isAfter(blockedStart)) {
                 return false;
             }
         }
@@ -303,23 +299,25 @@ public class AvailabilityServiceImpl implements AvailabilityService {
     public void blockTimeForAppointment(String appointmentId, ZonedDateTime startTime, int duration) {
         Appointment appointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
-        
-        // Convert to UTC for storage
+
+        // Convert the user's provided start time to UTC for storage
         ZonedDateTime utcStartTime = startTime.withZoneSameInstant(ZoneOffset.UTC);
-        LocalTime localStartTime = utcStartTime.toLocalTime();
-        LocalTime localEndTime = localStartTime.plusMinutes(duration);
-        
+
+        // Calculate the end time by adding the duration
+        ZonedDateTime utcEndTime = utcStartTime.plusMinutes(duration);
+
         BlockedPeriod blockedPeriod = BlockedPeriod.builder()
-                .date(utcStartTime.toLocalDate())
-                .startTime(localStartTime)
-                .endTime(localEndTime)
+                .date(utcStartTime.toLocalDate()) // Keep the date for simpler queries
+                .startDateTime(utcStartTime)      // Set the persistent startDateTime field
+                .endDateTime(utcEndTime)          // Set the persistent endDateTime field
+                .originalTimezone(startTime.getZone().getId()) // Store original timezone for context
                 .reason("APPOINTMENT")
                 .appointment(appointment)
                 .build();
-        
+
         blockedPeriodRepository.save(blockedPeriod);
-        log.info("Blocked time for appointment {}: {} to {} on {} (UTC)",
-                appointmentId, localStartTime, localEndTime, utcStartTime.toLocalDate());
+        log.info("Blocked time for appointment {}: from {} to {} (UTC)",
+                appointmentId, utcStartTime, utcEndTime);
     }
 
     @Override

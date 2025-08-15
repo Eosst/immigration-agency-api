@@ -31,9 +31,9 @@ public interface BlockedPeriodRepository extends JpaRepository<BlockedPeriod, St
 
     // Check if a specific time is blocked
     // Fixed query - using proper overlap detection
-    @Query("SELECT COUNT(b) > 0 FROM BlockedPeriod b WHERE b.date = ?1 AND " +
-            "(b.startTime < ?3 AND b.endTime > ?2)")
-    boolean isTimeBlocked(LocalDate date, LocalTime startTime, LocalTime endTime);
+//    @Query("SELECT COUNT(b) > 0 FROM BlockedPeriod b WHERE b.date = ?1 AND " +
+//            "(b.startTime < ?3 AND b.endTime > ?2)")
+//    boolean isTimeBlocked(LocalDate date, LocalTime startTime, LocalTime endTime);
 
     // Get dates that have at least one blocked period in a month
     @Query("SELECT DISTINCT b.date FROM BlockedPeriod b WHERE YEAR(b.date) = ?1 AND MONTH(b.date) = ?2")
@@ -48,7 +48,8 @@ public interface BlockedPeriodRepository extends JpaRepository<BlockedPeriod, St
     long countByDate(LocalDate date);
 
     // Find blocked periods ordered by date and time
-    List<BlockedPeriod> findAllByOrderByDateAscStartTimeAsc();
+    List<BlockedPeriod> findAllByOrderByDateAscStartDateTimeAsc();
+
 
     // Find blocked periods from a date onwards
     List<BlockedPeriod> findByDateGreaterThanEqual(LocalDate startDate);
