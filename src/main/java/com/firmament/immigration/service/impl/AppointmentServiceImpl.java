@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import com.firmament.immigration.dto.request.UpdateAppointmentRequest;
 
 @Service
 @RequiredArgsConstructor
@@ -181,5 +182,44 @@ public class AppointmentServiceImpl implements AppointmentService {
 
     private AppointmentResponse mapToResponse(Appointment appointment) {
         return modelMapper.map(appointment, AppointmentResponse.class);
+    }
+
+    @Override
+    @Transactional
+    public AppointmentResponse updateAppointment(String appointmentId, UpdateAppointmentRequest request) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found with id: " + appointmentId));
+
+        if (request.getAppointmentDate() != null || request.getDuration() != null) {
+            // Free up the old blocked time slot first
+            availabilityService.freeUpBlockedTimeForAppointment(appointment.getId());
+
+            // Update the appointment with new date/time
+            appointment.setAppointmentDate(request.getAppointmentDate());
+            if (request.getDuration() != null) {
+                appointment.setDuration(request.getDuration());
+            }
+
+            // Block the new time slot
+            availabilityService.blockTimeForAppointment(
+                    appointment.getId(),
+                    appointment.getAppointmentDate(),
+                    appointment.getDuration()
+            );
+        }
+
+        // Update other fields if they are provided
+        if (request.getStatus() != null) {
+            appointment.setStatus(request.getStatus());
+        }
+        if (request.getAdminNotes() != null) {
+            appointment.setAdminNotes(request.getAdminNotes());
+        }
+        if (request.getConsultationType() != null) {
+            appointment.setConsultationType(request.getConsultationType());
+        }
+
+        Appointment updatedAppointment = appointmentRepository.save(appointment);
+        return mapToResponse(updatedAppointment);
     }
 }

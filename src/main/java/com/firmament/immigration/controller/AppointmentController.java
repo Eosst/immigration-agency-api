@@ -1,6 +1,7 @@
 package com.firmament.immigration.controller;
 
 import com.firmament.immigration.dto.request.CreateAppointmentRequest;
+import com.firmament.immigration.dto.request.UpdateAppointmentRequest;
 import com.firmament.immigration.dto.response.AppointmentResponse;
 import com.firmament.immigration.service.AppointmentService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -59,5 +60,13 @@ public class AppointmentController {
     public ResponseEntity<Void> cancelAppointment(@PathVariable String id) {
         appointmentService.cancelAppointment(id);
         return ResponseEntity.noContent().build();
+    }
+    @PatchMapping("/{id}")
+    @Operation(summary = "Update appointment details", description = "Admin only - Update specific fields of an appointment")
+    public ResponseEntity<AppointmentResponse> updateAppointment(
+            @PathVariable String id,
+            @RequestBody UpdateAppointmentRequest request) {
+        AppointmentResponse response = appointmentService.updateAppointment(id, request);
+        return ResponseEntity.ok(response);
     }
 }

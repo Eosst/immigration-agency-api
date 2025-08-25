@@ -3,6 +3,7 @@ package com.firmament.immigration.dto.response;
 import lombok.Data;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
+import java.time.ZonedDateTime;
 import java.util.List;
 
 @Data
@@ -13,7 +14,7 @@ public class AppointmentResponse {
     private String email;
     private String phone;
     private String country;
-    private LocalDateTime appointmentDate; // UTC time
+    private ZonedDateTime appointmentDate; // UTC time
     private String userTimezone; // User's timezone for display
     private Integer duration;
     private String consultationType;
