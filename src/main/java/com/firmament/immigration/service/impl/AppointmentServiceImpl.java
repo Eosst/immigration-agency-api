@@ -66,6 +66,7 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .amount(amount)
                 .currency(request.getCurrency())
                 .status(AppointmentStatus.PENDING)
+                .userTimezone(request.getUserTimezone())
                 .build();
 
         appointment = appointmentRepository.save(appointment);
