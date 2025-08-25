@@ -234,4 +234,22 @@ public class AppointmentServiceImpl implements AppointmentService {
         Appointment updatedAppointment = appointmentRepository.save(appointment);
         return mapToResponse(updatedAppointment);
     }
+
+    @Override
+    public List<AppointmentResponse> getAllAppointments() {
+        List<Appointment> appointments = appointmentRepository.findAll();
+        return appointments.stream()
+                .sorted((a, b) -> b.getAppointmentDate().compareTo(a.getAppointmentDate())) // Sort by date descending
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<AppointmentResponse> getAppointmentsByStatus(AppointmentStatus status) {
+        List<Appointment> appointments = appointmentRepository.findByStatus(status);
+        return appointments.stream()
+                .sorted((a, b) -> b.getAppointmentDate().compareTo(a.getAppointmentDate())) // Sort by date descending
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
 }

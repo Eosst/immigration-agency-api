@@ -3,6 +3,7 @@ package com.firmament.immigration.controller;
 import com.firmament.immigration.dto.request.CreateAppointmentRequest;
 import com.firmament.immigration.dto.request.UpdateAppointmentRequest;
 import com.firmament.immigration.dto.response.AppointmentResponse;
+import com.firmament.immigration.entity.AppointmentStatus;
 import com.firmament.immigration.service.AppointmentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,7 +19,7 @@ import java.util.List;
 @RequestMapping("/api/appointments")
 @RequiredArgsConstructor
 @Tag(name = "Appointments", description = "Appointment management endpoints")
-@CrossOrigin(origins = "*") // Configure properly for production
+@CrossOrigin(origins = "*")
 public class AppointmentController {
 
     private final AppointmentService appointmentService;
@@ -41,8 +42,20 @@ public class AppointmentController {
     @GetMapping("/upcoming")
     @Operation(summary = "Get upcoming appointments", description = "Admin only - Get all upcoming confirmed appointments")
     public ResponseEntity<List<AppointmentResponse>> getUpcomingAppointments() {
-        // TODO: Add admin authentication check
         List<AppointmentResponse> appointments = appointmentService.getUpcomingAppointments();
+        return ResponseEntity.ok(appointments);
+    }
+
+    @GetMapping
+    @Operation(summary = "Get all appointments with optional status filter", description = "Admin only - Get all appointments, optionally filtered by status")
+    public ResponseEntity<List<AppointmentResponse>> getAllAppointments(
+            @RequestParam(required = false) AppointmentStatus status) {
+        List<AppointmentResponse> appointments;
+        if (status != null) {
+            appointments = appointmentService.getAppointmentsByStatus(status);
+        } else {
+            appointments = appointmentService.getAllAppointments();
+        }
         return ResponseEntity.ok(appointments);
     }
 
@@ -61,6 +74,7 @@ public class AppointmentController {
         appointmentService.cancelAppointment(id);
         return ResponseEntity.noContent().build();
     }
+
     @PatchMapping("/{id}")
     @Operation(summary = "Update appointment details", description = "Admin only - Update specific fields of an appointment")
     public ResponseEntity<AppointmentResponse> updateAppointment(
