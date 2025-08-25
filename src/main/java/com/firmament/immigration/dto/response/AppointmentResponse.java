@@ -13,7 +13,8 @@ public class AppointmentResponse {
     private String email;
     private String phone;
     private String country;
-    private LocalDateTime appointmentDate;
+    private LocalDateTime appointmentDate; // UTC time
+    private String userTimezone; // User's timezone for display
     private Integer duration;
     private String consultationType;
     private String clientPresentation;

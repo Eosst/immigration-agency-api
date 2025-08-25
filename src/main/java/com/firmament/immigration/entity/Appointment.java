@@ -46,6 +46,9 @@ public class Appointment extends BaseEntity {
     @Column(length = 1000)
     private String clientPresentation; // Their 500-word description
 
+    @Column(nullable = false)
+    private String userTimezone;
+
     // Payment Information
     @Column(nullable = false)
     private BigDecimal amount;
@@ -63,4 +66,11 @@ public class Appointment extends BaseEntity {
     // For admin notes
     @Column(length = 1000)
     private String adminNotes;
+
+
+    @Column(name = "reminder_sent")
+    private Boolean reminderSent = false;
+
+    @Column(name = "reminder_sent_at")
+    private ZonedDateTime reminderSentAt;
 }

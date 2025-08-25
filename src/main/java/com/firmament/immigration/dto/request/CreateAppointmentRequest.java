@@ -42,4 +42,7 @@ public class CreateAppointmentRequest {
     @NotBlank(message = "Currency is required")
     @Pattern(regexp = "CAD|MAD", message = "Currency must be CAD or MAD")
     private String currency;
+
+    @NotBlank(message = "User timezone is required")
+    private String userTimezone;
 }

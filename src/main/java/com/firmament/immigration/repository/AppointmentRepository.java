@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
 import java.util.List;
 
 @Repository
@@ -24,4 +25,19 @@ public interface AppointmentRepository extends JpaRepository<Appointment, String
     // For admin dashboard
     @Query("SELECT a FROM Appointment a WHERE a.status = ?1 ORDER BY a.appointmentDate ASC")
     List<Appointment> findUpcomingAppointments(AppointmentStatus status);
+
+    List<Appointment> findByStatusAndAppointmentDateBetween(
+            AppointmentStatus status,
+            ZonedDateTime start,
+            ZonedDateTime end
+    );
+    @Query("SELECT a FROM Appointment a WHERE a.status = ?1 " +
+            "AND a.appointmentDate BETWEEN ?2 AND ?3 " +
+            "AND (a.reminderSent = false OR a.reminderSent IS NULL)")
+    List<Appointment> findAppointmentsNeedingReminder(
+            AppointmentStatus status,
+            ZonedDateTime start,
+            ZonedDateTime end
+    );
+
 }

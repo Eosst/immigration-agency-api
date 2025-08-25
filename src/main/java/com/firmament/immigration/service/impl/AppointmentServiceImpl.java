@@ -10,14 +10,13 @@ import com.firmament.immigration.repository.AppointmentRepository;
 import com.firmament.immigration.repository.BlockedPeriodRepository;
 import com.firmament.immigration.service.AppointmentService;
 import com.firmament.immigration.service.AvailabilityService;
+import com.firmament.immigration.service.EmailService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.firmament.immigration.config.PricingConfig;
-import java.math.BigDecimal;
-
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -32,14 +31,9 @@ public class AppointmentServiceImpl implements AppointmentService {
     private final AppointmentRepository appointmentRepository;
     private final BlockedPeriodRepository blockedPeriodRepository;
     private final AvailabilityService availabilityService;
+    private final EmailService emailService; // ADD THIS
     private final ModelMapper modelMapper;
     private final PricingConfig pricingConfig;
-
-    // Price configuration
-    private static final BigDecimal PRICE_30_MIN_CAD = new BigDecimal("50");
-    private static final BigDecimal PRICE_60_MIN_CAD = new BigDecimal("90");
-    private static final BigDecimal PRICE_90_MIN_CAD = new BigDecimal("130");
-    private static final BigDecimal CAD_TO_MAD_RATE = new BigDecimal("10");
 
     @Override
     public AppointmentResponse createAppointment(CreateAppointmentRequest request) {
@@ -83,10 +77,69 @@ public class AppointmentServiceImpl implements AppointmentService {
                 request.getDuration()
         );
 
+        // 6. Send initial confirmation email (appointment created, payment pending)
+        try {
+            emailService.sendAppointmentConfirmation(appointment);
+        } catch (Exception e) {
+            log.error("Failed to send appointment confirmation email", e);
+            // Don't fail the appointment creation if email fails
+        }
+
         log.info("Appointment created with ID: {}", appointment.getId());
 
         return mapToResponse(appointment);
     }
+
+    @Override
+    public AppointmentResponse confirmPayment(String appointmentId, String paymentIntentId) {
+        log.info("Confirming payment for appointment: {}", appointmentId);
+
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
+
+        if (appointment.getStatus() != AppointmentStatus.PENDING) {
+            throw new BusinessException("Appointment is not in pending status");
+        }
+
+        appointment.setPaymentIntentId(paymentIntentId);
+        appointment.setStatus(AppointmentStatus.CONFIRMED);
+
+        appointment = appointmentRepository.save(appointment);
+
+        // Send payment confirmation email
+        try {
+            emailService.sendPaymentReceipt(appointment, paymentIntentId);
+        } catch (Exception e) {
+            log.error("Failed to send payment receipt email", e);
+        }
+
+        return mapToResponse(appointment);
+    }
+
+    @Override
+    public void cancelAppointment(String id) {
+        Appointment appointment = appointmentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
+
+        if (appointment.getStatus() == AppointmentStatus.COMPLETED) {
+            throw new BusinessException("Cannot cancel completed appointment");
+        }
+
+        appointment.setStatus(AppointmentStatus.CANCELLED);
+        appointmentRepository.save(appointment);
+        availabilityService.freeUpBlockedTimeForAppointment(id);
+
+        // Send cancellation notification email
+        try {
+            emailService.sendCancellationNotification(appointment);
+        } catch (Exception e) {
+            log.error("Failed to send cancellation email", e);
+        }
+
+        log.info("Appointment {} cancelled", id);
+    }
+
+    // ... rest of the methods remain the same
 
     @Override
     public AppointmentResponse getAppointmentById(String id) {
@@ -106,50 +159,11 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .collect(Collectors.toList());
     }
 
-    @Override
-    public AppointmentResponse confirmPayment(String appointmentId, String paymentIntentId) {
-        log.info("Confirming payment for appointment: {}", appointmentId);
-
-        Appointment appointment = appointmentRepository.findById(appointmentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
-
-        if (appointment.getStatus() != AppointmentStatus.PENDING) {
-            throw new BusinessException("Appointment is not in pending status");
-        }
-
-        appointment.setPaymentIntentId(paymentIntentId);
-        appointment.setStatus(AppointmentStatus.CONFIRMED);
-
-        appointment = appointmentRepository.save(appointment);
-
-        // TODO: Send confirmation email here
-
-        return mapToResponse(appointment);
-    }
-
-    @Override
-    public void cancelAppointment(String id) {
-        Appointment appointment = appointmentRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
-
-        if (appointment.getStatus() == AppointmentStatus.COMPLETED) {
-            throw new BusinessException("Cannot cancel completed appointment");
-        }
-
-        appointment.setStatus(AppointmentStatus.CANCELLED);
-        appointmentRepository.save(appointment);
-        availabilityService.freeUpBlockedTimeForAppointment(id);
-
-
-
-        log.info("Appointment {} cancelled", id);
-    }
-
     private BigDecimal calculatePrice(int duration, String currency) {
         Map<String, Integer> prices;
         if ("CAD".equalsIgnoreCase(currency)) {
             prices = pricingConfig.getCadDuration();
-        } else { // Default to MAD
+        } else {
             prices = pricingConfig.getMadDuration();
         }
         if (prices == null) {
@@ -164,10 +178,7 @@ public class AppointmentServiceImpl implements AppointmentService {
         return price;
     }
 
-
     private AppointmentResponse mapToResponse(Appointment appointment) {
         return modelMapper.map(appointment, AppointmentResponse.class);
     }
-
 }
-

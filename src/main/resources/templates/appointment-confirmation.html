@@ -1,46 +1,55 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
-  <meta charset="UTF-8">
-  <title>Appointment Confirmation</title>
-  <style>
-    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-    .header { background: #4CAF50; color: white; padding: 20px; text-align: center; }
-    .content { background: #f9f9f9; padding: 30px; margin-top: 20px; border-radius: 5px; }
-    .appointment-details { background: white; padding: 20px; margin: 20px 0; border-radius: 5px; }
-    .button { display: inline-block; background: #4CAF50; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin-top: 20px; }
-    .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
-  </style>
+    <meta charset="UTF-8">
+    <title>Appointment Confirmation</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #4CAF50; color: white; padding: 20px; text-align: center; }
+        .content { background: #f9f9f9; padding: 30px; margin-top: 20px; border-radius: 5px; }
+        .appointment-details { background: white; padding: 20px; margin: 20px 0; border-radius: 5px; }
+        .button { display: inline-block; background: #4CAF50; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin-top: 20px; }
+        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+        .timezone-notice { background: #E3F2FD; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #2196F3; }
+        .highlight { color: #2196F3; font-weight: bold; }
+    </style>
 </head>
 <body>
 <div class="container">
-  <div class="header">
-    <h1>Appointment Confirmed!</h1>
-  </div>
-
-  <div class="content">
-    <p>Dear <span th:text="${firstName}"></span>,</p>
-
-    <p>Your appointment has been successfully confirmed. We look forward to meeting with you!</p>
-
-    <div class="appointment-details">
-      <h3>Appointment Details:</h3>
-      <p><strong>Date & Time:</strong> <span th:text="${appointmentDate}"></span></p>
-      <p><strong>Duration:</strong> <span th:text="${duration}"></span> minutes</p>
-      <p><strong>Consultation Type:</strong> <span th:text="${consultationType}"></span></p>
-      <p><strong>Appointment ID:</strong> <span th:text="${appointmentId}"></span></p>
+    <div class="header">
+        <h1>Appointment Confirmed!</h1>
     </div>
 
-    <p>Please keep this email for your records. You will receive a reminder 24 hours before your appointment.</p>
+    <div class="content">
+        <p>Dear <span th:text="${firstName}"></span>,</p>
 
-    <a th:href="${viewLink}" class="button">View Appointment Details</a>
-  </div>
+        <p>Your appointment has been successfully confirmed. We look forward to meeting with you!</p>
 
-  <div class="footer">
-    <p>© 2025 Firmament Immigration. All rights reserved.</p>
-    <p>If you need to cancel or reschedule, please contact us at least 24 hours in advance.</p>
-  </div>
+        <div class="appointment-details">
+            <h3>📅 Appointment Details:</h3>
+            <p><strong>Date & Time:</strong> <span class="highlight" th:text="${appointmentDate}"></span></p>
+            <p><strong>Duration:</strong> <span th:text="${duration}"></span> minutes</p>
+            <p><strong>Consultation Type:</strong> <span th:text="${consultationType}"></span></p>
+            <p><strong>Appointment ID:</strong> <span th:text="${appointmentId}"></span></p>
+        </div>
+
+        <div class="timezone-notice">
+            <p>⏰ <strong>Important:</strong> Your appointment time is shown in your local timezone:
+                <strong th:text="${timezone}"></strong> (<span th:text="${timezoneAbbr}"></span>)</p>
+            <p style="margin: 5px 0; font-size: 14px;">Please ensure you're available at this time in your timezone.</p>
+        </div>
+
+        <p>You will receive a reminder email 24 hours before your appointment.</p>
+
+        <a th:href="${viewLink}" class="button">View Appointment Details</a>
+    </div>
+
+    <div class="footer">
+        <p>© 2025 Firmament Immigration. All rights reserved.</p>
+        <p>If you need to cancel or reschedule, please contact us at least 24 hours in advance.</p>
+        <p style="font-size: 12px; color: #999;">All times are displayed in <span th:text="${timezone}"></span></p>
+    </div>
 </div>
 </body>
 </html>

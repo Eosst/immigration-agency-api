@@ -13,8 +13,11 @@ import org.springframework.stereotype.Service;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -36,12 +39,59 @@ public class EmailServiceImpl implements EmailService {
     @Value("${app.frontend.url}")
     private String frontendUrl;
 
+    /**
+     * Format appointment date/time in user's timezone
+     */
+    private String formatAppointmentDateTime(Appointment appointment) {
+        // Get the appointment date (stored in UTC)
+        ZonedDateTime utcDateTime = appointment.getAppointmentDate();
+
+        // Convert to user's timezone
+        ZoneId userZone = ZoneId.of(appointment.getUserTimezone());
+        ZonedDateTime userDateTime = utcDateTime.withZoneSameInstant(userZone);
+
+        // Format with timezone info
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern(
+                "EEEE, MMMM d, yyyy 'at' h:mm a z",
+                Locale.ENGLISH
+        );
+
+        return userDateTime.format(formatter);
+    }
+
+    /**
+     * Get formatted time only in user's timezone
+     */
+    private String formatTimeOnly(Appointment appointment) {
+        ZonedDateTime utcDateTime = appointment.getAppointmentDate();
+        ZoneId userZone = ZoneId.of(appointment.getUserTimezone());
+        ZonedDateTime userDateTime = utcDateTime.withZoneSameInstant(userZone);
+
+        return userDateTime.format(DateTimeFormatter.ofPattern("h:mm a"));
+    }
+
+    /**
+     * Get timezone abbreviation for display
+     */
+    private String getTimezoneAbbreviation(Appointment appointment) {
+        ZoneId userZone = ZoneId.of(appointment.getUserTimezone());
+        ZonedDateTime userDateTime = appointment.getAppointmentDate()
+                .withZoneSameInstant(userZone);
+
+        // This will return abbreviations like EST, PST, CET, etc.
+        return userDateTime.format(DateTimeFormatter.ofPattern("z"));
+    }
+
     @Override
     public void sendAppointmentConfirmation(Appointment appointment) {
         Context context = new Context();
         context.setVariable("firstName", appointment.getFirstName());
-        context.setVariable("appointmentDate", appointment.getAppointmentDate()
-                .format(DateTimeFormatter.ofPattern("MMMM d, yyyy 'at' h:mm a")));
+
+        // Format date/time in user's timezone
+        context.setVariable("appointmentDate", formatAppointmentDateTime(appointment));
+        context.setVariable("timezone", appointment.getUserTimezone());
+        context.setVariable("timezoneAbbr", getTimezoneAbbreviation(appointment));
+
         context.setVariable("duration", appointment.getDuration());
         context.setVariable("consultationType", appointment.getConsultationType());
         context.setVariable("appointmentId", appointment.getId());
@@ -62,8 +112,16 @@ public class EmailServiceImpl implements EmailService {
         context.setVariable("amount", appointment.getAmount());
         context.setVariable("currency", appointment.getCurrency());
         context.setVariable("paymentId", paymentIntentId);
-        context.setVariable("appointmentDate", appointment.getAppointmentDate()
-                .format(DateTimeFormatter.ofPattern("MMMM d, yyyy 'at' h:mm a")));
+
+        // Format date/time in user's timezone
+        context.setVariable("appointmentDate", formatAppointmentDateTime(appointment));
+        context.setVariable("timezone", appointment.getUserTimezone());
+
+        // Current date/time in user's timezone for receipt
+        ZonedDateTime now = ZonedDateTime.now(ZoneId.of(appointment.getUserTimezone()));
+        context.setVariable("paymentDate", now.format(
+                DateTimeFormatter.ofPattern("MMMM d, yyyy 'at' h:mm a z")
+        ));
 
         sendEmail(
                 appointment.getEmail(),
@@ -77,14 +135,18 @@ public class EmailServiceImpl implements EmailService {
     public void sendAppointmentReminder(Appointment appointment) {
         Context context = new Context();
         context.setVariable("firstName", appointment.getFirstName());
-        context.setVariable("appointmentDate", appointment.getAppointmentDate()
-                .format(DateTimeFormatter.ofPattern("MMMM d, yyyy 'at' h:mm a")));
+
+        // Format date/time in user's timezone
+        context.setVariable("appointmentDate", formatAppointmentDateTime(appointment));
+        context.setVariable("appointmentTime", formatTimeOnly(appointment));
+        context.setVariable("timezone", appointment.getUserTimezone());
+        context.setVariable("timezoneAbbr", getTimezoneAbbreviation(appointment));
+
         context.setVariable("joinLink", frontendUrl + "/appointments/" + appointment.getId());
 
         sendEmail(
                 appointment.getEmail(),
-                "Appointment Reminder - Tomorrow at " +
-                        appointment.getAppointmentDate().format(DateTimeFormatter.ofPattern("h:mm a")),
+                "Appointment Reminder - Tomorrow at " + formatTimeOnly(appointment),
                 "appointment-reminder",
                 context
         );
@@ -95,8 +157,10 @@ public class EmailServiceImpl implements EmailService {
         Context context = new Context();
         context.setVariable("firstName", appointment.getFirstName());
         context.setVariable("fileNames", fileNames);
-        context.setVariable("appointmentDate", appointment.getAppointmentDate()
-                .format(DateTimeFormatter.ofPattern("MMMM d, yyyy 'at' h:mm a")));
+
+        // Format date/time in user's timezone
+        context.setVariable("appointmentDate", formatAppointmentDateTime(appointment));
+        context.setVariable("timezone", appointment.getUserTimezone());
 
         sendEmail(
                 appointment.getEmail(),
@@ -110,8 +174,10 @@ public class EmailServiceImpl implements EmailService {
     public void sendCancellationNotification(Appointment appointment) {
         Context context = new Context();
         context.setVariable("firstName", appointment.getFirstName());
-        context.setVariable("appointmentDate", appointment.getAppointmentDate()
-                .format(DateTimeFormatter.ofPattern("MMMM d, yyyy 'at' h:mm a")));
+
+        // Format date/time in user's timezone
+        context.setVariable("appointmentDate", formatAppointmentDateTime(appointment));
+        context.setVariable("timezone", appointment.getUserTimezone());
 
         sendEmail(
                 appointment.getEmail(),
@@ -134,7 +200,8 @@ public class EmailServiceImpl implements EmailService {
             helper.setText(htmlContent, true);
 
             mailSender.send(message);
-            log.info("Email sent successfully to: {}", to);
+            log.info("Email sent successfully to: {} for timezone: {}",
+                    to, context.getVariable("timezone"));
 
         } catch (Exception e) {
             log.error("Failed to send email to: {}", to, e);
