@@ -191,16 +191,11 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Appointment not found with id: " + appointmentId));
 
         if (request.getAppointmentDate() != null || request.getDuration() != null) {
-            // Free up the old blocked time slot first
             availabilityService.freeUpBlockedTimeForAppointment(appointment.getId());
-
-            // Update the appointment with new date/time
             appointment.setAppointmentDate(request.getAppointmentDate());
             if (request.getDuration() != null) {
                 appointment.setDuration(request.getDuration());
             }
-
-            // Block the new time slot
             availabilityService.blockTimeForAppointment(
                     appointment.getId(),
                     appointment.getAppointmentDate(),
@@ -208,7 +203,18 @@ public class AppointmentServiceImpl implements AppointmentService {
             );
         }
 
-        // Update other fields if they are provided
+        if (request.getFirstName() != null) {
+            appointment.setFirstName(request.getFirstName());
+        }
+        if (request.getLastName() != null) {
+            appointment.setLastName(request.getLastName());
+        }
+        if (request.getEmail() != null) {
+            appointment.setEmail(request.getEmail());
+        }
+        if (request.getPhone() != null) {
+            appointment.setPhone(request.getPhone());
+        }
         if (request.getStatus() != null) {
             appointment.setStatus(request.getStatus());
         }
@@ -217,6 +223,12 @@ public class AppointmentServiceImpl implements AppointmentService {
         }
         if (request.getConsultationType() != null) {
             appointment.setConsultationType(request.getConsultationType());
+        }
+        if (request.getAmount() != null) {
+            appointment.setAmount(request.getAmount());
+        }
+        if (request.getCurrency() != null) {
+            appointment.setCurrency(request.getCurrency());
         }
 
         Appointment updatedAppointment = appointmentRepository.save(appointment);
