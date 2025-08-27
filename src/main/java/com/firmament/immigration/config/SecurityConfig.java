@@ -1,10 +1,10 @@
 package com.firmament.immigration.config;
 
 import java.util.Arrays;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -38,51 +38,32 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // OpenAPI endpoints
-                        .requestMatchers(
-                                "/v3/api-docs/**",
-                                "/v3/api-docs.yaml",
-                                "/swagger-ui/**",
-                                "/swagger-ui.html",
-                                "/swagger-resources/**",
-                                "/webjars/**"
-                        ).permitAll()
-
-                        // Auth endpoints - PUBLIC ACCESS
+                        // Endpoints for PUBLIC access (clients, documentation, etc.)
                         .requestMatchers("/api/auth/login").permitAll()
-
-                        // Public API endpoints
                         .requestMatchers("/api/health").permitAll()
-                        .requestMatchers("/api/appointments", "/api/appointments/**").permitAll() // Allow all appointment endpoints for now
-                        .requestMatchers("/api/timeslots/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/appointments").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/appointments/*/confirm-payment").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/availability/**").permitAll()
+                        .requestMatchers("/api/payments/webhook").permitAll()
+                        .requestMatchers("/api/payments/create-intent/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/documents/upload/**").permitAll()
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 
-                        // Availability endpoints - PUBLIC ACCESS for viewing
-                        .requestMatchers("/api/availability/month/**").permitAll()
-                        .requestMatchers("/api/availability/day/**").permitAll()
+                        // Endpoints for ADMIN access ONLY
+                        // Any request to /api/appointments that isn't the public POST requires ADMIN role
+                        .requestMatchers("/api/appointments/**").hasRole("ADMIN")
+                        .requestMatchers("/api/documents/**").hasRole("ADMIN")
+                        .requestMatchers("/api/availability/block/**").hasRole("ADMIN")
+                        .requestMatchers("/api/availability/blocked-periods").hasRole("ADMIN")
 
-                        // Admin only endpoints (disabled for now)
-                        .requestMatchers("/api/availability/block").permitAll()
-                        .requestMatchers("/api/availability/block/**").permitAll()
-                        .requestMatchers("/api/availability/blocked-periods").permitAll()
-
-                        // H2 Console (dev only)
+                        // H2 Console (for local dev only, but doesn't hurt to permit)
                         .requestMatchers("/h2-console/**").permitAll()
 
-                        // Actuator
-                        .requestMatchers("/actuator/**").permitAll()
-
-                        // Payment webhook
-                        .requestMatchers("/api/payments/webhook").permitAll()
-                        .requestMatchers("api/payments/create-intent/**").permitAll()
-
-                        // Document upload
-                        .requestMatchers("/api/documents/**").permitAll()
-
-                        // Everything else requires authentication
+                        // Any other request must be authenticated.
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .headers(headers -> headers
+                .headers(headers -> headers // Required for H2 console
                         .frameOptions(frame -> frame.sameOrigin()));
 
         return http.build();
@@ -91,10 +72,10 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
+        // Allow all origins for Netlify preview deployments
         configuration.setAllowedOrigins(Arrays.asList("*"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS" , "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setAllowCredentials(false);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;

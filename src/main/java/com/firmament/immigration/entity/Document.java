@@ -20,6 +20,10 @@ public class Document extends BaseEntity {
     @Column(nullable = false)
     private String filePath;
 
+    @Column(name = "public_id") // Add this new column
+    private String publicId; // This will store Cloudinary's ID for deletion
+
+
     private Long fileSize;
 
     @ManyToOne(fetch = FetchType.LAZY)
