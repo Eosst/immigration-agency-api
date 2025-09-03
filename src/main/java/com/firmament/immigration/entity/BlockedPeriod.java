@@ -57,4 +57,17 @@ public class BlockedPeriod extends BaseEntity {
     public LocalTime getEndTimeInZone(String timezone) {
         return endDateTime.withZoneSameInstant(java.time.ZoneId.of(timezone)).toLocalTime();
     }
+    public LocalTime getStartTime() {
+        if (startDateTime != null) {
+            return startDateTime.toLocalTime();
+        }
+        return startTime; // fallback to transient field
+    }
+
+    public LocalTime getEndTime() {
+        if (endDateTime != null) {
+            return endDateTime.toLocalTime();
+        }
+        return endTime; // fallback to transient field
+    }
 }
