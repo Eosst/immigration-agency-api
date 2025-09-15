@@ -207,14 +207,20 @@ public class AvailabilityServiceImpl implements AvailabilityService {
             throw new BusinessException("Invalid block period request");
         }
     }
-    
+
     private void createSingleDayBlock(BlockPeriodRequest request, String timezone) {
+        ZoneId zoneId = ZoneId.of(timezone);
+
         if (request.isFullDay()) {
-            // Block entire day
+            // Block entire day - convert to UTC for storage
+            ZonedDateTime startDateTime = request.getDate().atStartOfDay(zoneId).withZoneSameInstant(ZoneOffset.UTC);
+            ZonedDateTime endDateTime = request.getDate().atTime(23, 59, 59).atZone(zoneId).withZoneSameInstant(ZoneOffset.UTC);
+
             BlockedPeriod blockedPeriod = BlockedPeriod.builder()
                     .date(request.getDate())
-                    .startTime(LocalTime.of(0, 0))
-                    .endTime(LocalTime.of(23, 59))
+                    .startDateTime(startDateTime)  // FIX: Set persistent field
+                    .endDateTime(endDateTime)      // FIX: Set persistent field
+                    .originalTimezone(timezone)
                     .reason(request.getReason())
                     .notes(request.getNotes())
                     .build();
@@ -228,11 +234,18 @@ public class AvailabilityServiceImpl implements AvailabilityService {
             if (request.getStartTime().isAfter(request.getEndTime())) {
                 throw new BusinessException("Start time must be before end time");
             }
-            
+
+            // Convert local times to UTC for storage
+            ZonedDateTime startDateTime = request.getDate().atTime(request.getStartTime()).atZone(zoneId)
+                    .withZoneSameInstant(ZoneOffset.UTC);
+            ZonedDateTime endDateTime = request.getDate().atTime(request.getEndTime()).atZone(zoneId)
+                    .withZoneSameInstant(ZoneOffset.UTC);
+
             BlockedPeriod blockedPeriod = BlockedPeriod.builder()
                     .date(request.getDate())
-                    .startTime(request.getStartTime())
-                    .endTime(request.getEndTime())
+                    .startDateTime(startDateTime)  // FIX: Set persistent field
+                    .endDateTime(endDateTime)      // FIX: Set persistent field
+                    .originalTimezone(timezone)
                     .reason(request.getReason())
                     .notes(request.getNotes())
                     .build();
@@ -241,42 +254,57 @@ public class AvailabilityServiceImpl implements AvailabilityService {
                     request.getDate(), request.getStartTime(), request.getEndTime(), timezone);
         }
     }
-    
+
     private void createDateRangeBlock(BlockPeriodRequest request, String timezone) {
         if (request.getEndDate().isBefore(request.getDate())) {
             throw new BusinessException("End date must be after start date");
         }
-        
+
+        ZoneId zoneId = ZoneId.of(timezone);
+
         // Calculate the number of days to block
         long daysBetween = java.time.temporal.ChronoUnit.DAYS.between(
-            request.getDate(), 
-            request.getEndDate()
+                request.getDate(),
+                request.getEndDate()
         ) + 1; // +1 to include both start and end dates
-        
+
         if (daysBetween > 365) {
             throw new BusinessException("Cannot block more than 365 days at once");
         }
-        
+
         List<BlockedPeriod> periodsToSave = new ArrayList<>();
         LocalDate currentDate = request.getDate();
-        
+
         while (!currentDate.isAfter(request.getEndDate())) {
+            ZonedDateTime startDateTime, endDateTime;
+
+            if (request.isFullDay()) {
+                startDateTime = currentDate.atStartOfDay(zoneId).withZoneSameInstant(ZoneOffset.UTC);
+                endDateTime = currentDate.atTime(23, 59, 59).atZone(zoneId).withZoneSameInstant(ZoneOffset.UTC);
+            } else {
+                startDateTime = currentDate.atTime(request.getStartTime()).atZone(zoneId)
+                        .withZoneSameInstant(ZoneOffset.UTC);
+                endDateTime = currentDate.atTime(request.getEndTime()).atZone(zoneId)
+                        .withZoneSameInstant(ZoneOffset.UTC);
+            }
+
             BlockedPeriod blockedPeriod = BlockedPeriod.builder()
                     .date(currentDate)
-                    .startTime(request.isFullDay() ? LocalTime.of(0, 0) : request.getStartTime())
-                    .endTime(request.isFullDay() ? LocalTime.of(23, 59) : request.getEndTime())
+                    .startDateTime(startDateTime)  // FIX: Set persistent field
+                    .endDateTime(endDateTime)      // FIX: Set persistent field
+                    .originalTimezone(timezone)
                     .reason(request.getReason())
                     .notes(request.getNotes())
                     .build();
-            
+
             periodsToSave.add(blockedPeriod);
             currentDate = currentDate.plusDays(1);
         }
-        
+
         // Save all periods in batch
         blockedPeriodRepository.saveAll(periodsToSave);
-        
-        log.info("Blocked date range from {} to {} ({} days) in timezone: {}", 
+
+        log.info("Blocked date range from {} to {} ({} days) in timezone: {}",
                 request.getDate(), request.getEndDate(), daysBetween, timezone);
     }
 
